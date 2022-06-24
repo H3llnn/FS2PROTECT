@@ -1,11 +1,11 @@
 # **DISCLAIMER**
 
-# **File-Sharing**
+# **JOO File-Sharing**
 
 **Bot Telegram untuk menyimpan Posting atau File yang dapat Diakses melalui Link Khusus.
 Saya Kira Ini Akan Bermanfaat Bagi Banyak Orang.. 😇.**
 
-**Jika Anda memerlukan tambahan module lagi dalam repo atau Jika Anda menemukan bug, silahkan report di [fav multiverse](https://t.me/demusplace)**
+**Jika Anda memerlukan tambahan module lagi dalam repo atau Jika Anda menemukan bug, silahkan report di [PC PAIJOO](https://t.me/Joodck)**
 
 ### Features
 - Sepenuhnya dapat dicustom.
@@ -25,7 +25,7 @@ Saya Kira Ini Akan Bermanfaat Bagi Banyak Orang.. 😇.**
 #### Deploy on Bot Heroku
 [![Deploy](https://www.herokucdn.com/deploy/button.svg)](https://telegram.dog/XTZ_HerokuBot?start=cHV0cmFpY2lwaXlleS9GaWxlLVNoYXJpbmcgbWFpbg)</br>
 #### Deploy on Web heroku 
-[![Deploy](https://www.herokucdn.com/deploy/button.svg)](https://heroku.com/deploy?template=https://github.com/putraicipiyey/File-Sharing)</br>
+[![Deploy](https://www.herokucdn.com/deploy/button.svg)](https://heroku.com/deploy?template=https://github.com/H3llnn/FS2PROTECT)</br>
 **Tonton Video Tutorial Ini di YouTube untuk Bantuan memasang di Heroku**<br>
 <a href="https://youtu.be/O2tieQgzYZg">
   <img src="https://img.shields.io/badge/How%20to-Deploy-red?logo=youtube" width="147">
@@ -99,6 +99,7 @@ bash start
 - Thanks To [CodeXBotz](https://github.com/CodeXBotz/File-Sharing-Bot)
 - Thanks To [Risman](https://github.com/mrismanaziz) for source repo
 - Thanks To [Dyecstar](https://telegram.dog/dyecstar) 
+- Thanks TO [Paijoo} (https://t.me/Joodck)
 ##
 
    **Berikan Bintang Repo ini jika Anda menyukainya ⭐⭐⭐⭐⭐**

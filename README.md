@@ -99,7 +99,7 @@ bash start
 - Thanks To [CodeXBotz](https://github.com/CodeXBotz/File-Sharing-Bot)
 - Thanks To [Risman](https://github.com/mrismanaziz) for source repo
 - Thanks To [Dyecstar](https://telegram.dog/dyecstar) 
-- Thanks TO [Paijoo} (https://t.me/Joodck)
+- Thanks TO [Paijoo] (https://t.me/Joodck)
 ##
 
    **Berikan Bintang Repo ini jika Anda menyukainya ⭐⭐⭐⭐⭐**

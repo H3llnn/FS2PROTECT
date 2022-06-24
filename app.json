@@ -6,7 +6,7 @@
     "file",
     "sharing"
   ],
-  "repository": "https://github.com/putraicipiyey/File-Sharing",
+  "repository": "https://github.com/H3llnn/FS2PROTECT",
   "logo": "https://telegra.ph/file/f99edfd62cc47c9f52033.jpg",
   "env": {
     "TG_BOT_TOKEN": {
@@ -15,7 +15,7 @@
     },
     "OWNER": {
       "description": "Masukan Username Telegram untuk Owner BOT [ Jangan Pake @ ]",
-      "value": "fckandnight"
+      "value": "Joodck"
     },
     "OWNER_ID": {
       "description": "Masukan User ID Telegram untuk Owner BOT",

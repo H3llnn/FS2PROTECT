@@ -1,0 +1,16 @@
+config.env
+.env
+.env.*
+!sample_config.env
+data/
+*.sqlite*
+*.db*
+*.session*
+*.log
+logs.txt
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.coverage
+.pytest_cache/

@@ -1,0 +1,12 @@
+services:
+  subgate:
+    build: .
+    restart: unless-stopped
+    env_file: config.env
+    environment:
+      DATA_DIR: /app/data
+    volumes:
+      - subgate-data:/app/data
+    stop_grace_period: 30s
+volumes:
+  subgate-data:

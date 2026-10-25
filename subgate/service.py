@@ -1,6 +1,7 @@
 """File delivery and durable expiry; Telegram operations are injected."""
 import asyncio
 import time
+from .copy import h, panel, pretty, INVALID_LINK, UNAVAILABLE
 
 
 class TelegramFailure(Exception):
@@ -25,12 +26,18 @@ class Delivery:
         self.locks = {}
 
     async def text(self, chat, text, **kwargs):
-        return await self.api.call('sendMessage', chat_id=chat, text=text, **kwargs)
+        return await self.api.call('sendMessage', chat_id=chat, text=text, parse_mode='HTML', **kwargs)
 
     async def incident(self, scope, broken):
         if self.db.incident(self.bot, scope, broken):
-            text = (f'Gangguan akses {scope}. Periksa izin admin, ketersediaan pesan sumber, dan koneksi Telegram.'
-                    if broken else f'Akses {scope} sudah pulih, bot kembali normal.')
+            target = next((t for t in self.db.targets(self.bot) if str(t['chat']) in scope), None)
+            label = target['title'] if target and target.get('title') else scope
+            text = (panel('Botmu perlu perhatian 🔧',
+                          f'Ada kendala akses ke <b>{h(label)}</b>.\n'
+                          '<b>Kendala:</b> Akses admin, pesan sumber, atau koneksi Telegram bermasalah.\n\n'
+                          'Periksa akses admin dan izin botnya, ya.')
+                    if broken else panel('Akses kembali normal ✨',
+                          f'Kendala pada <b>{h(label)}</b> sudah teratasi.\nBotmu siap melayani pengguna lagi.'))
             try:
                 await self.text(self.db.bot(self.bot)['owner'], text)
             except TelegramFailure:
@@ -81,25 +88,42 @@ class Delivery:
     async def _deliver(self, user, key):
         sources = self.db.sources(self.bot, key)
         if not sources:
-            await self.text(user, 'Link tidak valid atau tidak ditemukan.')
+            await self.text(user, INVALID_LINK)
             return False
         settings = self.db.settings(self.bot)
         try:
             missing = await self.missing(user)
         except TelegramFailure:
-            await self.text(user, 'Layanan sedang mengalami gangguan. Silakan coba lagi nanti.')
+            await self.text(user, UNAVAILABLE)
             return False
         if missing:
             buttons = [[{'text': 'Join Channel' if item['kind'] == 'channel' else 'Join Group',
                          'url': item['url']}] for item in missing]
             buttons.append([action('Coba Lagi', f'get:{key}')])
-            await self.text(user, settings['force_message'], reply_markup=inline(buttons))
+            await self.text(user, pretty(settings['force_message']), reply_markup=inline(buttons))
             return False
         deadline = self.clock() + settings['delete_seconds']
         sent = 0
         complete = True
         try:
+            units = []
+            group = []
             for source, message in sources:
+                metadata = self.db.content(self.bot, source, message)
+                if metadata and metadata.get('type') in ('photo', 'video'):
+                    if group and (group[0][0] != source or len(group) == 10):
+                        units.append(group)
+                        group = []
+                    group.append((source, message, metadata))
+                else:
+                    if group:
+                        units.append(group)
+                        group = []
+                    units.append([(source, message, None)])
+            if group:
+                units.append(group)
+            for unit in units:
+                source, message, _ = unit[0]
                 try:
                     await self.check_admin(source)
                 except TelegramFailure:
@@ -107,26 +131,30 @@ class Delivery:
                     raise
                 await self.incident(f'chat:{source}', False)
                 try:
-                    result = await self.api.call('copyMessage', chat_id=user,
-                        from_chat_id=source, message_id=message, protect_content=settings['protection'])
+                    if len(unit) > 1:
+                        results = await self.api.call('sendMediaGroup', chat_id=user,
+                            media=[item[2] for item in unit], protect_content=settings['protection'])
+                    else:
+                        results = [await self.api.call('copyMessage', chat_id=user,
+                            from_chat_id=source, message_id=message, protect_content=settings['protection'])]
                 except TelegramFailure:
                     await self.incident(f'file:{source}:{message}', True)
                     raise
-                sent += 1
-                if settings['delete_seconds']:
-                    self.db.schedule(self.bot, user, result['message_id'], deadline)
+                for result in results:
+                    sent += 1
+                    if settings['delete_seconds']:
+                        self.db.schedule(self.bot, user, result['message_id'], deadline)
                 await self.incident(f'file:{source}:{message}', False)
-                # Keep batch ordering and stay below Telegram's per-chat send rate.
-                if len(sources) > 1:
+                if len(units) > 1:
                     await asyncio.sleep(1.05)
         except TelegramFailure:
             complete = False
-            await self.text(user, 'Layanan sedang mengalami gangguan. Silakan coba lagi nanti.')
+            await self.text(user, UNAVAILABLE)
         finally:
             if sent and settings['delete_seconds']:
                 seconds = settings['delete_seconds']
                 duration = f'{seconds // 60} menit' if seconds % 60 == 0 else f'{seconds} detik'
-                notice = await self.text(user, settings['delete_notice'].format(durasi=duration))
+                notice = await self.text(user, pretty(settings['delete_notice'].replace('{durasi}', duration)))
                 self.db.schedule(self.bot, user, notice['message_id'], deadline)
         return complete
 
@@ -169,4 +197,4 @@ class Delivery:
         if not url:
             invite = await self.api.call('createChatInviteLink', chat_id=chat, name='Zeisss SubGate')
             url = invite['invite_link']
-        return {'chat': chat, 'kind': 'channel' if info['type'] == 'channel' else 'group', 'url': url}
+        return {'chat': chat, 'kind': 'channel' if info['type'] == 'channel' else 'group', 'url': url, 'title': info.get('title', str(chat))}

@@ -3,7 +3,8 @@ import unittest
 from pathlib import Path
 from cryptography.fernet import Fernet
 
-from subgate.store import Store
+from subgate.store import Store, DEFAULTS
+from subgate.copy import DENIED_UPLOAD
 from subgate.ui import ChildUI
 from test_service import FakeAPI
 
@@ -27,7 +28,7 @@ class UITests(unittest.IsolatedAsyncioTestCase):
 
     async def test_unauthorized_file_denial(self):
         await self.send(3, document={'file_id': 'x'})
-        self.assertEqual(self.api.calls[-1][1]['text'], 'Hanya pemilik dan admin yang dapat membuat link.')
+        self.assertEqual(self.api.calls[-1][1]['text'], DENIED_UPLOAD)
 
     async def test_photo_and_custom_text_saved_by_owner(self):
         self.ui.wait(2, 'setting', key='welcome_photo')
@@ -39,7 +40,7 @@ class UITests(unittest.IsolatedAsyncioTestCase):
     async def test_invalid_notice_template_not_saved(self):
         self.ui.wait(2, 'setting', key='delete_notice')
         await self.send(text='{durasi.__class__}')
-        self.assertEqual(self.db.settings(99)['delete_notice'], 'File akan dihapus otomatis dalam {durasi}.')
+        self.assertEqual(self.db.settings(99)['delete_notice'], DEFAULTS['delete_notice'])
 
     async def test_batch_retains_caption_implicitly_via_copy_and_order(self):
         self.db.setting(99, 2, 'database', -100123)

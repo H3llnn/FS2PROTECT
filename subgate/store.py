@@ -8,10 +8,10 @@ from cryptography.fernet import Fernet
 
 DEFAULTS = {
     'database': None, 'protection': False, 'delete_seconds': 1800,
-    'welcome': 'Halo! Saya dapat menyimpan dan membagikan file melalui link.',
+    'welcome': '✦ Selamat datang di {nama_bot} ✨\n\nHai, {nama_pengguna} 👋\nPunya link konten? Buka linknya untuk mengambil isi yang dibagikan.',
     'welcome_photo': None,
-    'force_message': 'Silakan bergabung ke semua channel/grup berikut untuk mengambil file.',
-    'delete_notice': 'File akan dihapus otomatis dalam {durasi}.',
+    'force_message': '✦ Tinggal selangkah lagi 🔐\n\nGabung ke channel atau grup di bawah untuk membuka kontennya.\nSetelah selesai, tekan Coba Lagi, ya.',
+    'delete_notice': '✦ Kontenmu sudah sampai 📦\n\nPesan di atas akan dihapus otomatis dalam {durasi}.\nNikmati kontennya sebelum waktunya habis, ya ✨',
 }
 
 
@@ -46,6 +46,10 @@ class Store:
                 id INTEGER PRIMARY KEY, bot INTEGER NOT NULL REFERENCES bots(id),
                 chat INTEGER NOT NULL, message_id INTEGER NOT NULL, due REAL NOT NULL,
                 UNIQUE(bot,chat,message_id));
+            CREATE TABLE IF NOT EXISTS content (
+                bot INTEGER NOT NULL REFERENCES bots(id), chat INTEGER NOT NULL,
+                message_id INTEGER NOT NULL, metadata TEXT NOT NULL,
+                PRIMARY KEY(bot,chat,message_id));
             CREATE TABLE IF NOT EXISTS incidents (
                 bot INTEGER NOT NULL, scope TEXT NOT NULL, PRIMARY KEY(bot,scope));
         ''')
@@ -53,6 +57,42 @@ class Store:
         if 'redeploy_required' not in columns:
             self.conn.execute('ALTER TABLE bots ADD COLUMN redeploy_required INTEGER NOT NULL DEFAULT 0')
             self.conn.commit()
+
+        if 'name' not in columns:
+            self.conn.execute("ALTER TABLE bots ADD COLUMN name TEXT NOT NULL DEFAULT ''")
+            self.conn.commit()
+        target_columns = {r['name'] for r in self.conn.execute('PRAGMA table_info(targets)')}
+        if 'title' not in target_columns:
+            self.conn.execute("ALTER TABLE targets ADD COLUMN title TEXT NOT NULL DEFAULT ''")
+            self.conn.commit()
+        # Old settings were stored as full snapshots; update only unchanged defaults.
+        old_defaults = {
+            'welcome': 'Halo! Saya dapat menyimpan dan membagikan file melalui link.',
+            'force_message': 'Silakan bergabung ke semua channel/grup berikut untuk mengambil file.',
+            'delete_notice': 'File akan dihapus otomatis dalam {durasi}.',
+        }
+        if self.conn.execute('PRAGMA user_version').fetchone()[0] < 1:
+            with self.conn:
+                for row in self.rows('SELECT id,settings FROM bots'):
+                    saved = json.loads(row['settings'])
+                    for key, old in old_defaults.items():
+                        if saved.get(key) == old:
+                            saved[key] = DEFAULTS[key]
+                    self.conn.execute('UPDATE bots SET settings=? WHERE id=?', (json.dumps(saved), row['id']))
+
+            self.conn.execute('PRAGMA user_version=1')
+
+    def display_name(self, bot, name):
+        with self.conn:
+            self.conn.execute('UPDATE bots SET name=? WHERE id=?', (name, bot))
+
+    def content(self, bot, chat, message_id, metadata=None):
+        if metadata is not None:
+            with self.conn:
+                self.conn.execute('INSERT INTO content VALUES (?,?,?,?) ON CONFLICT(bot,chat,message_id) DO UPDATE SET metadata=excluded.metadata',
+                                  (bot, chat, message_id, json.dumps(metadata)))
+        rows = self.rows('SELECT metadata FROM content WHERE bot=? AND chat=? AND message_id=?', (bot, chat, message_id))
+        return json.loads(rows[0]['metadata']) if rows else None
 
     def close(self):
         self.conn.close()
@@ -103,7 +143,7 @@ class Store:
         if self.bot(bot)['owner'] != actor:
             raise PermissionError('Hanya pemilik bot yang boleh mengubah pengaturan.')
 
-    def deploy(self, actor, bot, username, api_id, api_hash, token, session):
+    def deploy(self, actor, bot, username, api_id, api_hash, token, session, name=None):
         if not self.allowed(actor):
             raise PermissionError('Kamu belum mendapat izin membuat bot.')
         existing = self.rows('SELECT owner FROM bots WHERE id=?', (bot,))
@@ -116,6 +156,9 @@ class Store:
                 VALUES (?,?,?,?,1) ON CONFLICT(id) DO UPDATE SET
                 username=excluded.username, credentials=excluded.credentials, active=1, redeploy_required=0''',
                 (bot, actor, username, encrypted))
+
+        if name:
+            self.display_name(bot, name)
 
     def credentials(self, bot):
         return json.loads(self.cipher.decrypt(self.bot(bot)['credentials']))
@@ -176,7 +219,7 @@ class Store:
     def targets(self, bot):
         return self.rows('SELECT * FROM targets WHERE bot=? ORDER BY rowid', (bot,))
 
-    def target(self, bot, actor, chat, kind, url):
+    def target(self, bot, actor, chat, kind, url, title=''):
         self.owner(bot, actor)
         targets = self.targets(bot)
         if chat not in [r['chat'] for r in targets] and len(targets) >= 4:
@@ -184,9 +227,9 @@ class Store:
         if kind not in ('channel', 'group') or chat >= 0 or not url.startswith('https://t.me/'):
             raise ValueError('Channel/grup tidak valid.')
         with self.conn:
-            self.conn.execute('''INSERT INTO targets VALUES (?,?,?,?)
-                ON CONFLICT(bot,chat) DO UPDATE SET kind=excluded.kind,url=excluded.url''',
-                (bot, chat, kind, url))
+            self.conn.execute('''INSERT INTO targets(bot,chat,kind,url,title) VALUES (?,?,?,?,?)
+                ON CONFLICT(bot,chat) DO UPDATE SET kind=excluded.kind,url=excluded.url,title=excluded.title''',
+                (bot, chat, kind, url, title))
 
     def remove_target(self, bot, actor, chat):
         self.owner(bot, actor)

@@ -27,6 +27,17 @@ class Manager:
         return Poller(api, ui.handle, lambda: bool(self.db.bot(record['id'])['active'])
                       and self.db.allowed(record['owner']))
 
+    async def lookup_name(self, bot):
+        from .telegram import API
+        runner = self.running.get(bot)
+        api = runner.api if runner else API(self.db.credentials(bot)['token'])
+        try:
+            me = await api.call('getMe')
+            return ' '.join(v for v in (me.get('first_name'), me.get('last_name')) if v)
+        finally:
+            if not runner:
+                await api.close()
+
     async def _start(self, bot):
         if bot in self.running:
             return
@@ -55,7 +66,7 @@ class Manager:
                 raise PermissionError('Bot sudah terdaftar milik pengguna lain.')
             if bot in self.running:
                 await self.running.pop(bot).stop()
-            self.db.deploy(owner, bot, me['username'], api_id, api_hash, token, session)
+            self.db.deploy(owner, bot, me['username'], api_id, api_hash, token, session, name=me.get('name'))
             try:
                 await self._start(bot)
             except Exception:

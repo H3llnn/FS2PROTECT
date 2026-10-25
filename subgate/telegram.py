@@ -57,7 +57,7 @@ async def authenticate(api_id, api_hash, token):
             me = await client.get_me()
             if not me.bot or not me.username:
                 raise ValueError('Token harus milik bot Telegram.')
-            return {'id': me.id, 'username': me.username}, client.session.save()
+            return {'id': me.id, 'username': me.username, 'name': ' '.join(n for n in (me.first_name, me.last_name) if n)}, client.session.save()
     except asyncio.CancelledError:
         raise
     except Exception:
@@ -117,4 +117,7 @@ class Poller:
             task.cancel()
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
+        ui = getattr(self.handler, '__self__', None)
+        if ui is not None and hasattr(ui, 'close'):
+            await ui.close()
         await self.api.close()

@@ -26,6 +26,29 @@ file dengan ForceSubs. Nama bot mengikuti nama masing-masing di Telegram.
 - Broadcast khusus pemilik. Notifikasi gangguan satu kali per masalah ke pemilik,
   lalu satu notifikasi pemulihan. Kegagalan pemeriksaan tidak membebaskan akses.
 
+## Pembaruan pesan, tombol, teks dan album
+
+- Teks biasa dari pemilik/admin kini dapat menjadi link, termasuk dalam batch.
+- Foto/video berurutan pada batch baru dikirim sebagai album, maksimal 10 media
+  per album. Teks/dokumen tetap terpisah dan sesuai urutan. Album yang lebih besar
+  dipecah otomatis. Link lama tanpa metadata media tetap dikirim satu per satu.
+- Link memiliki tombol **📋 Salin Link**. Perlu aplikasi Telegram yang mendukung
+  copy-text buttons; link tetap terlihat agar bisa disalin manual.
+- Bot induk dan bot anak memakai pesan baru, tombol Kembali/Batal, preview,
+  durasi pilihan cepat, detail bot/pengguna dan konfirmasi tindakan.
+- Nama bot Telegram ditampilkan pada tombol daftar; username/ID hanya di detail.
+- Formulir berakhir setelah 10 menit tidak aktif. Pengaturan khusus, kredensial,
+  link dan jadwal penghapusan sebelumnya tetap disimpan. Pesan bawaan lama yang
+  belum dikustomisasi diperbarui satu kali.
+- Caption asli dipertahankan saat upload. Album baru memakai metadata file ID dan
+  caption yang disimpan saat upload; mengedit/menghapus posting sumber kemudian
+  tidak memperbarui metadata album yang sudah tersimpan. Akses admin ke channel
+  sumber tetap diperiksa. Ini bukan fitur pencabutan link.
+- Untuk memperbarui instalasi ZIP lokal: hentikan dengan Ctrl+C, cadangkan
+  config.env dan folder data, salin folder subgate dari versi terbaru ke folder
+  proyek lama, lalu jalankan main.py lagi. Jangan mengganti SECRET_KEY atau
+  menghapus data. Tidak ada dependensi baru untuk pembaruan ini.
+
 ## Persiapan
 
 1. Python **3.12+**, satu VPS/server yang menyala terus, dan disk persisten.

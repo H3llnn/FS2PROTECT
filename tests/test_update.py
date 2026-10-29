@@ -66,7 +66,7 @@ class UpdateTests(unittest.IsolatedAsyncioTestCase):
         before = len([m for m,a in self.api.calls if m == 'copyMessage'])
         await self.send('No access', user=4)
         self.assertEqual(len([m for m,a in self.api.calls if m == 'copyMessage']), before)
-        self.assertIn('Akses terbatas', self.api.calls[-1][1]['text'])
+        self.assertIn('Akses terbatas', next(args['text'] for method,args in reversed(self.api.calls) if method=='sendMessage'))
 
     async def test_batch_album_splits_at_text_document_and_preserves_captions(self):
         await self.send('/batch')
@@ -121,7 +121,7 @@ class UpdateTests(unittest.IsolatedAsyncioTestCase):
         self.ui.pending[2]['expires'] = 0
         await self.send('Late setting input')
         self.assertFalse(any(m == 'copyMessage' for m,a in self.api.calls))
-        self.assertIn('Sesimu sudah berakhir', self.api.calls[-1][1]['text'])
+        self.assertIn('Sesi pengaturan berakhir', next(args['text'] for method,args in reversed(self.api.calls) if method=='sendMessage'))
 
     async def test_master_back_clears_hash_and_cancel_discards_credentials(self):
         await self.master.begin(2)

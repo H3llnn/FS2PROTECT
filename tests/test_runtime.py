@@ -125,3 +125,17 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(2, ui.pending)
         await send('/buatbot')
         self.assertEqual(ui.pending[2]['step'], 'api_id')
+
+    async def test_payment_permission_and_kind_are_enforced(self):
+        with self.assertRaises(PermissionError):
+            await self.manager.deploy(2,123,'a'*32,'99:'+'x'*30,kind='payment')
+        self.db.grant(1,2,'both')
+        await self.manager.deploy(2,123,'a'*32,'99:'+'x'*30,kind='payment')
+        self.assertEqual(self.db.bot(99)['kind'],'payment')
+        with self.assertRaises(ValueError):
+            await self.manager.deploy(2,123,'a'*32,'99:'+'x'*30,kind='forcesubs')
+        self.assertIn(99,self.manager.running)
+        await self.manager.grant(1,2,'forcesubs')
+        self.assertNotIn(99,self.manager.running)
+        self.assertFalse(self.db.bot(99)['active'])
+        self.assertTrue(self.db.allowed(2,'forcesubs'))

@@ -1,5 +1,8 @@
 # Zeisss SubGate
 
+> Payment versi sederhana: hubungkan username Saweria, lalu bot memeriksa status transaksi otomatis tanpa stream key, webhook atau tunnel. Baca [panduan singkat](docs/PAYMENT-SIMPLE.md). Integrasi masih diuji; biaya bersih dan masa berlaku QRIS belum divalidasi sepenuhnya.
+
+
 **Maintained by Zeisss.** Bot induk Telegram untuk menjalankan banyak bot berbagi
 file dengan ForceSubs. Nama bot mengikuti nama masing-masing di Telegram.
 
@@ -48,6 +51,21 @@ file dengan ForceSubs. Nama bot mengikuti nama masing-masing di Telegram.
   config.env dan folder data, salin folder subgate dari versi terbaru ke folder
   proyek lama, lalu jalankan main.py lagi. Jangan mengganti SECRET_KEY atau
   menghapus data. Tidak ada dependensi baru untuk pembaruan ini.
+
+## Bot anak Payment
+
+- Satu bot induk memberi izin ForceSubs, Payment, atau keduanya. Setiap bot anak memakai nama Telegram milik pemiliknya.
+- Pemilik menghubungkan username Saweria melalui /setting. Pembeli memilih akses dan langsung menerima QRIS tanpa mengisi email. Pemeriksaan otomatis dan tombol Cek Pembayaran memakai validasi transaksi yang sama.
+- Pembayaran terverifikasi menghasilkan undangan untuk satu anggota. Setelah dipakai, undangan dicabut. Pembelian bersifat permanen; keluar dari channel/grup tidak memberi hak masuk kembali lewat undangan lama.
+- Pemilik mengatur nama, deskripsi, foto, harga, tujuan, urutan dan status akses. Admin Payment hanya mengedit tampilan akses/sambutan dan mengirim broadcast, setelah menekan /start dan berhasil menerima pemberitahuan izin.
+- Pembelian Saya menyimpan pembelian berhasil. Tombol Coba Kirim Link Lagi memakai pesanan dan undangan yang sama jika pengiriman gagal; tidak meminta pembayaran ulang.
+- Notifikasi pembayaran hanya ke pemilik, dengan nama pembeli yang bisa diklik, akses dan harga. Pesan bawaan untuk pembeli tidak menyebut penyedia pembayaran; pengaturan pemilik tetap menyebut Saweria.
+- Menu/formulir baru menggantikan layar bot sebelumnya. QRIS aktif dipertahankan hingga dibatalkan atau pembayaran terverifikasi. Link akses, notifikasi dan hasil broadcast tetap tersimpan. Pesan pengguna tidak dihapus.
+- Broadcast Payment memakai preview dan konfirmasi. Hanya pembuat dapat menghentikan dan menerima hasilnya. Tidak dilanjutkan otomatis setelah restart.
+- Harga akses minimal Rp1.000. Integrasi memakai endpoint penyedia yang dapat berubah; status yang tidak jelas tidak membuka akses.
+
+Panduan: [Payment sederhana](docs/PAYMENT-SIMPLE.md), [pembaruan terakhir](docs/PERAPIHAN-CARA-UPDATE.md).
+Instalasi dari versi ForceSubs memerlukan pemasangan ulang requirements.txt karena Payment menambahkan qrcode/Pillow. Cadangkan config.env dan data; pertahankan SECRET_KEY.
 
 ## Persiapan
 

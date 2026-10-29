@@ -24,12 +24,19 @@ class MasterUI(BaseUI):
             'Semua botmu, satu tempat. Buat bot baru atau kelola yang sudah aktif lewat menu di bawah.\n\n'
             '🔐 Akses khusus pengguna yang mendapat izin.\n\n<i>Maintained by Zeisss</i>'), buttons)
 
-    async def begin(self, user):
+    async def begin(self, user, kind=None):
         if not self.db.allowed(user):
             self.clear(user)
             return await self.text(user, panel('Akses khusus 🔐',
                 'Kamu belum mendapat izin untuk membuat bot.\nHubungi pengelola untuk meminta akses, ya.'), [HOME])
-        self.wait(user, 'deploy', step='api_id', back='m:back')
+        kinds=[k for k in ('forcesubs','payment') if self.db.allowed(user,k)]
+        if kind is None and len(kinds)>1:
+            self.clear(user)
+            return await self.text(user,panel('Pilih jenis bot ✨','Bot mana yang ingin kamu jalankan?'),
+                [[button('ForceSubs','m:kind:forcesubs'),button('Payment · Percobaan','m:kind:payment')],HOME])
+        kind=kind or kinds[0]
+        if kind not in kinds: raise PermissionError('Kamu belum mendapat izin untuk jenis bot ini.')
+        self.wait(user, 'deploy', step='api_id', bot_kind=kind, back='m:back')
         await self.deploy_prompt(user)
 
     async def deploy_prompt(self, user):
@@ -107,9 +114,9 @@ class MasterUI(BaseUI):
         buttons += [[link_button('↗ Buka Bot', f'https://t.me/{row["username"]}')],
                     [button('‹ Bot Saya' if context == 'mine' else '‹ Kembali', back)], HOME]
         body = (f'<b>Nama:</b> {h(name)}\n<b>Username:</b> @{h(row["username"])}\n'
-                f'<b>ID bot:</b> {bot}\n<b>Pemilik:</b> {row["owner"]}\n<b>Status:</b> {status}')
+                f'<b>Jenis:</b> {h(row["kind"])}\n<b>ID bot:</b> {bot}\n<b>Pemilik:</b> {row["owner"]}\n<b>Status:</b> {status}')
         if context == 'mine':
-            body += '\n\nPengaturan channel, ForceSubs, dan admin tersedia di bot ini.'
+            body += '\n\nPengaturan tersedia melalui /setting di bot anak.'
         if row['redeploy_required']:
             body += '\n\nPemilik perlu deploy ulang setelah mendapat izin kembali.'
         await self.text(user, panel('Detail botmu 🤖' if context == 'mine' else 'Detail bot 🤖', body), buttons)
@@ -140,29 +147,36 @@ class MasterUI(BaseUI):
         allowed = self.db.allowed(target)
         buttons = [[button('🔒 Cabut Akses' if allowed else '🔑 Beri Akses',
                           f'm:revoke_ask:{target}' if allowed else f'm:grant_id:{target}')],
+                   [button('Ubah Jenis Izin',f'm:grant_id:{target}')],
                    [button('🤖 Bot Pengguna', f'm:owned:{target}:0')],
                    [button('‹ Daftar Pengguna', 'm:users:0')], HOME]
         await self.text(user, panel('Detail akses pengguna 👤',
             f'<b>ID:</b> {target}\n<b>Akses:</b> {"🟢 Diizinkan" if allowed else "🔒 Dicabut"}\n'
-            f'<b>Jumlah bot:</b> {len(self.db.bots(target))}'), buttons)
+            f'<b>Jenis izin:</b> {h(", ".join(k for k in ("forcesubs","payment") if self.db.allowed(target,k)) or "Tidak ada")}\n<b>Jumlah bot:</b> {len(self.db.bots(target))}'), buttons)
 
-    async def ask_revoke(self, user, target):
+    async def ask_revoke(self, user, target, kind=None):
         self.db.master(user)
         if target == self.db.master_owner:
             raise ValueError('Akses pemilik bot induk tidak dapat dicabut.')
-        self.wait(user, 'revoke_confirm', target=target, back=f'm:user:{target}')
-        await self.text(user, panel('Cabut akses pengguna? 🔐',
-            f'Pengguna <b>{target}</b> memiliki <b>{len(self.db.bots(target))} bot</b>.\n'
-            'Semua botnya akan dihentikan, tetapi data tetap disimpan.\n\n'
-            'Jika diberi akses kembali, pengguna harus deploy ulang.'),
-            [[button('🔒 Cabut Akses', f'm:revoke_yes:{target}'), button('‹ Kembali', f'm:user:{target}')]])
+        kinds=[k for k in ('forcesubs','payment') if self.db.allowed(target,k)]
+        if kind is None and len(kinds)==1: kind=kinds[0]
+        if kind is None:
+            self.clear(user)
+            return await self.text(user,panel('Cabut izin mana? 🔐',f'Pengguna: {target}'),
+                [[button('ForceSubs',f'm:revoke_type:{target}:forcesubs'),button('Payment',f'm:revoke_type:{target}:payment')],
+                 [button('Keduanya',f'm:revoke_type:{target}:both')],HOME])
+        if kind not in ('forcesubs','payment','both'): raise ValueError('Jenis tidak dikenal.')
+        self.wait(user,'revoke_confirm',target=target,bot_kind=kind,back=f'm:user:{target}')
+        await self.text(user,panel('Cabut akses pengguna? 🔐',
+            f'Pengguna: <b>{target}</b>\nJenis: <b>{h(kind)}</b>\nBot terkait akan dihentikan dan pesanan belum dibayar dibatalkan. Data tetap disimpan. Setelah izin pulih, pemilik perlu deploy ulang.'),
+            [[button('Cabut Akses',f'm:revoke_yes:{target}:{kind}'),button('Kembali',f'm:user:{target}')]])
 
     async def grant(self, user, target):
-        self.db.grant(user, target)
-        self.clear(user)
-        await self.text(user, panel('Akses berhasil diberikan ✅',
-            f'Pengguna <b>{target}</b> sekarang bisa membuat bot melalui bot induk.'),
-            [[button('＋ Tambah Lagi', 'm:grant')], HOME])
+        self.db.master(user)
+        self.wait(user,'grant_kind',target=target)
+        await self.text(user,panel('Pilih izin pengguna 🔑',f'ID: {target}\nJenis izin ini menggantikan izin sebelumnya. Bot dari jenis yang dicabut akan berhenti.'),
+            [[button('ForceSubs',f'm:grant_kind:{target}:forcesubs'),button('Payment',f'm:grant_kind:{target}:payment')],
+             [button('Keduanya',f'm:grant_kind:{target}:both')],HOME])
 
     async def callback(self, user, data, message):
         if data == 'x:cancel':
@@ -171,6 +185,8 @@ class MasterUI(BaseUI):
             return await self.menu(user)
         if data == 'm:create':
             return await self.begin(user)
+        if data.startswith('m:kind:'):
+            return await self.begin(user,data.split(':')[2])
         if data == 'm:back':
             state = self.state(user)
             if not state or state['kind'] != 'deploy':
@@ -202,20 +218,28 @@ class MasterUI(BaseUI):
             return await self.users_menu(user, int(parts[2]))
         if data.startswith('m:user:'):
             return await self.user_detail(user, int(parts[2]))
+        if data.startswith('m:grant_kind:'):
+            state=self.state(user)
+            if not state or state['kind']!='grant_kind' or state['target']!=int(parts[2]): raise ValueError('Konfirmasi izin berakhir.')
+            await self.manager.grant(user,int(parts[2]),parts[3])
+            self.clear(user)
+            return await self.text(user,panel('Izin diberikan ✅','Jenis izin: '+h(parts[3])),[HOME])
         if data.startswith('m:grant_id:'):
             return await self.grant(user, int(parts[2]))
+        if data.startswith('m:revoke_type:'):
+            return await self.ask_revoke(user,int(parts[2]),parts[3])
         if data.startswith('m:revoke_ask:'):
             return await self.ask_revoke(user, int(parts[2]))
         if data.startswith('m:revoke_yes:'):
             target = int(parts[2])
             state = self.state(user)
-            if not state or state['kind'] != 'revoke_confirm' or state['target'] != target:
+            if not state or state['kind'] != 'revoke_confirm' or state['target'] != target or (len(parts)==4 and state.get('bot_kind')!=parts[3]):
                 raise ValueError('Konfirmasi sudah berakhir. Pilih pengguna kembali.')
-            await self.manager.revoke(user, target)
+            await self.manager.revoke(user, target,state['bot_kind'])
             self.clear(user)
             return await self.text(user, panel('Akses sudah dicabut 🔒',
                 f'Akses pengguna <b>{target}</b> telah dinonaktifkan.\n'
-                'Semua bot miliknya sudah dihentikan, dan datanya tetap tersimpan.'),
+                'Bot dari jenis izin tersebut dihentikan, dan datanya tetap tersimpan.'),
                 [[button('‹ Daftar Pengguna', 'm:users:0')], HOME])
         if data.startswith('m:bots:'):
             return await self.listing(user, int(parts[2]), True)
@@ -283,7 +307,7 @@ class MasterUI(BaseUI):
         self.clear(user)
         await self.text(user, panel('Menyiapkan botmu… ⚙️', 'Sebentar ya, kredensialmu sedang diperiksa.'))
         try:
-            me = await self.manager.deploy(user, state['api_id'], state['api_hash'], text)
+            me = await self.manager.deploy(user, state['api_id'], state['api_hash'], text,kind=state['bot_kind'])
         except (ValueError, PermissionError):
             return await self.text(user, panel('Botmu belum bisa diaktifkan 🔧',
                 'Periksa kembali API ID, API hash, dan token yang kamu masukkan, lalu coba lagi.'),

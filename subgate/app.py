@@ -73,10 +73,14 @@ async def main():
     with instance_lock(config.data):
         db = Store(config.data / 'subgate.sqlite', config.key, config.owner)
         api = API(config.token)
-        manager = poller = None
+        manager = poller = webhook = None
         try:
             me = await api.call('getMe')
             manager = Manager(db, me['id'])
+            from .payment_webhook import PaymentWebhook
+            webhook=PaymentWebhook(db,manager,os.environ.get('PAYMENT_PUBLIC_BASE','') if os.environ.get('PAYMENT_ENABLE_WEBHOOK')=='1' else '',
+                os.environ.get('PAYMENT_BIND','127.0.0.1'),int(os.environ.get('PAYMENT_PORT','8080')))
+            await webhook.start()
             ui = MasterUI(db, api, manager)
             poller = Poller(api, ui.handle)
             await poller.start()
@@ -85,6 +89,7 @@ async def main():
             print(f"Zeisss SubGate aktif: @{me['username']}", flush=True)
             await asyncio.Future()
         finally:
+            if webhook: await webhook.close()
             if poller:
                 await poller.stop()
             else:

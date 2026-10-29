@@ -53,15 +53,7 @@ class ChildUI(BaseUI):
         s = self.db.settings(self.bot)
         text = s['welcome'].replace('{nama_bot}', await self.name()).replace('{nama_pengguna}', self.names.get(user, 'teman'))
         buttons = SETTINGS if user == self.db.bot(self.bot)['owner'] else []
-        if s['welcome_photo']:
-            long_caption = len(text.encode('utf-16-le')) // 2 > 1024
-            await self.api.call('sendPhoto', chat_id=user, photo=s['welcome_photo']['file_id'],
-                caption='' if long_caption else pretty(text), parse_mode='HTML',
-                reply_markup={'inline_keyboard': [] if long_caption else buttons})
-            if long_caption:
-                await self.text(user, pretty(text), buttons)
-        else:
-            await self.text(user, pretty(text), buttons)
+        await self.photo_text(user, (s['welcome_photo'] or {}).get('file_id'), pretty(text), buttons)
 
     async def settings_menu(self, user):
         self.db.owner(self.bot, user)
@@ -444,7 +436,7 @@ class ChildUI(BaseUI):
         link = f'https://t.me/{self.db.bot(self.bot)["username"]}?start={key}'
         title = 'Paketmu siap dibagikan 🔗' if batch else 'Kontenmu siap dibagikan 🔗'
         body = f'<b>{len(sources)} konten</b> berhasil disatukan dalam satu link.' if batch else 'Link berhasil dibuat.'
-        await self.text(user, panel(title, body+'\n\n'+h(link)), [[copy_button(link)]])
+        await self.durable(user, panel(title, body+'\n\n'+h(link)), [[copy_button(link)]])
 
     async def broadcast(self, user, message_id):
         self.db.owner(self.bot, user)
@@ -462,6 +454,6 @@ class ChildUI(BaseUI):
                 except TelegramFailure:
                     failed += 1
                 await asyncio.sleep(0.05)
-            await self.text(user, panel('Broadcast selesai ✨', f'✅ Berhasil: <b>{success}</b>\n⚠️ Gagal: <b>{failed}</b>'))
+            await self.durable(user, panel('Broadcast selesai ✨', f'✅ Berhasil: <b>{success}</b>\n⚠️ Gagal: <b>{failed}</b>'))
         finally:
             self.broadcasting = False

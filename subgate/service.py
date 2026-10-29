@@ -100,7 +100,9 @@ class Delivery:
             buttons = [[{'text': 'Join Channel' if item['kind'] == 'channel' else 'Join Group',
                          'url': item['url']}] for item in missing]
             buttons.append([action('Coba Lagi', f'get:{key}')])
-            await self.text(user, pretty(settings['force_message']), reply_markup=inline(buttons))
+            screen=await self.text(user, pretty(settings['force_message']), reply_markup=inline(buttons))
+            from .display import Display
+            await Display(self.db.conn,self.api).replace(self.bot,user,[screen])
             return False
         deadline = self.clock() + settings['delete_seconds']
         sent = 0

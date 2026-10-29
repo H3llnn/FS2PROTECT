@@ -1,6 +1,8 @@
 """Shared private-chat routing, safe HTML and expiring conversations."""
 import asyncio
 import time
+from collections import defaultdict
+from .display import Display
 from .copy import h, panel, button, nav
 from .service import inline, TelegramFailure
 
@@ -25,8 +27,37 @@ class BaseUI:
         self.db, self.api = db, api
         self.pending, self.timers, self.names = {}, {}, {}
         self.expired = set()
+        self.display = Display(db.conn, api)
+        self.screen_locks = defaultdict(asyncio.Lock)
 
     async def text(self, user, text, buttons=None):
+        async with self.screen_locks[user]:
+            message = await self.durable(user, text, buttons)
+            await self.display.replace(getattr(self, 'bot', 0), user, [message])
+            return message
+
+    async def photo_text(self, user, photo, text, buttons=None):
+        if not photo:
+            return await self.text(user, text, buttons)
+        async with self.screen_locks[user]:
+            long_caption = len(text.encode('utf-16-le')) // 2 > 1024
+            message = await self.api.call('sendPhoto', chat_id=user, photo=photo,
+                caption='' if long_caption else text, parse_mode='HTML',
+                reply_markup=inline([] if long_caption else (buttons or [])))
+            messages = [message]
+            if long_caption:
+                try:
+                    messages.append(await self.durable(user, text, buttons))
+                except TelegramFailure:
+                    # Preserve the old screen and track the partial new photo for cleanup.
+                    with self.db.conn:
+                        self.db.conn.execute('INSERT OR IGNORE INTO display_screens VALUES (?,?,?)',
+                            (getattr(self, 'bot', 0), user, message['message_id']))
+                    raise
+            await self.display.replace(getattr(self, 'bot', 0), user, messages)
+            return messages[-1]
+
+    async def durable(self, user, text, buttons=None):
         args = {'chat_id': user, 'text': text, 'parse_mode': 'HTML'}
         if buttons is not None:
             args['reply_markup'] = inline(buttons)
@@ -57,8 +88,8 @@ class BaseUI:
             return
         self.clear(user)
         self.expired.add(user)
-        await self.text(user, panel('Sesimu sudah berakhir ⏳',
-            'Pengisian tadi sudah ditutup.\nMulai lagi saat kamu siap, ya.'), self.expiry_buttons(state))
+        await self.text(user, panel('⏳ Sesi pengaturan berakhir',
+            'Buka pengaturan lagi untuk melanjutkan, ya. Perubahan yang belum disimpan tidak diterapkan.'), self.expiry_buttons(state))
 
     async def expire_after(self, user, state):
         try:
@@ -90,12 +121,17 @@ class BaseUI:
         state = self.state(user)
         return nav(state.get('back', 'm:back')) if state else None
 
+    def error_text(self, exc):
+        return panel('Cek sekali lagi, ya 🔎',
+            h(exc)+'\n\nKirim ulang data yang sesuai untuk melanjutkan.')
+
     async def handle(self, update):
         subject = private_subject(update)
         if subject is None:
             return
         user, message, callback = subject
-        self.names[user] = (callback or message).get('from', {}).get('first_name') or 'teman'
+        sender = (callback or message).get('from', {})
+        self.names[user] = ' '.join(sender.get(key) or '' for key in ('first_name', 'last_name')).strip() or 'teman'
         try:
             if callback:
                 await self.api.call('answerCallbackQuery', callback_query_id=callback['id'])
@@ -115,14 +151,13 @@ class BaseUI:
                 return await self.expire(user, state)
             if user in self.expired and not cmd.startswith('/'):
                 self.expired.discard(user)
-                return await self.text(user, panel('Sesimu sudah berakhir ⏳',
-                    'Pengisian tadi sudah ditutup.\nMulai lagi saat kamu siap, ya.'), self.expiry_buttons({}))
+                return await self.text(user, panel('⏳ Sesi pengaturan berakhir',
+                    'Buka pengaturan lagi untuk melanjutkan, ya. Perubahan yang belum disimpan tidak diterapkan.'), self.expiry_buttons({}))
             await self.message(user, message)
         except PermissionError as exc:
             await self.text(user, panel('Akses terbatas 🔐', h(exc)))
         except ValueError as exc:
-            await self.text(user, panel('Cek sekali lagi, ya 🔎',
-                h(exc)+'\n\nKirim ulang data yang sesuai untuk melanjutkan.'), self.error_buttons(user))
+            await self.text(user, self.error_text(exc), self.error_buttons(user))
         except TelegramFailure:
             await self.text(user, panel('Ada kendala sebentar 🔧',
                 'Permintaanmu belum bisa diproses.\nCoba lagi beberapa saat lagi, ya.'), self.error_buttons(user))

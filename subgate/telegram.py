@@ -37,6 +37,22 @@ class API:
             description = str(body.get('description', 'Telegram gagal merespons.')).replace(self.token, '[redacted]')
             raise TelegramFailure(code, description, retry)
 
+    async def send_photo_bytes(self,chat,data,caption,markup):
+        import json
+        form=aiohttp.FormData()
+        form.add_field('chat_id',str(chat))
+        form.add_field('caption',caption)
+        form.add_field('reply_markup',json.dumps(markup))
+        form.add_field('photo',data,filename='qris.png',content_type='image/png')
+        try:
+            async with self.session.post(f'https://api.telegram.org/bot{self.token}/sendPhoto',data=form) as response:
+                body=await response.json(content_type=None)
+        except (aiohttp.ClientError,TimeoutError,ValueError):
+            raise TelegramFailure(503,'Pengiriman QRIS belum dapat dipastikan; jangan membayar ulang.') from None
+        if not body.get('ok'):
+            raise TelegramFailure(body.get('error_code',500),'QRIS belum dapat dikirim.')
+        return body['result']
+
     async def close(self):
         await self.session.close()
 
@@ -97,7 +113,7 @@ class Poller:
         while True:
             try:
                 updates = await self.api.call('getUpdates', offset=offset, timeout=50,
-                    allowed_updates=['message', 'callback_query'])
+                    allowed_updates=['message', 'callback_query', 'chat_member'])
                 for update in updates:
                     await self.slots.acquire()
                     task = asyncio.create_task(self.dispatch(update))

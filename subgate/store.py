@@ -7,6 +7,7 @@ from pathlib import Path
 from cryptography.fernet import Fernet
 
 DEFAULTS = {
+    'payment_welcome': 'Hai, {nama_pengguna} 👋\nPilih akses favoritmu dan dapatkan aksesnya dengan mudah 🤍', 'payment_photo': None,
     'database': None, 'protection': False, 'delete_seconds': 1800,
     'welcome': '✦ Selamat datang di {nama_bot} ✨\n\nHai, {nama_pengguna} 👋\nPunya link konten? Buka linknya untuk mengambil isi yang dibagikan.',
     'welcome_photo': None,
@@ -81,6 +82,11 @@ class Store:
                     self.conn.execute('UPDATE bots SET settings=? WHERE id=?', (json.dumps(saved), row['id']))
 
             self.conn.execute('PRAGMA user_version=1')
+        self.init_payment()
+
+    def init_payment(self):
+        from .payment_store import migrate
+        migrate(self)
 
     def display_name(self, bot, name):
         with self.conn:
@@ -104,26 +110,48 @@ class Store:
         if actor != self.master_owner:
             raise PermissionError('Hanya pemilik bot induk yang boleh melakukan ini.')
 
-    def allowed(self, user):
+    def allowed(self, user, kind=None):
+        if kind is not None and kind not in ('forcesubs','payment'):
+            raise ValueError('Jenis bot tidak dikenal.')
         if user == self.master_owner:
             return True
-        rows = self.rows('SELECT allowed FROM creators WHERE id=?', (user,))
+        if kind is not None:
+            if kind not in ('forcesubs', 'payment'):
+                raise ValueError('Jenis bot tidak dikenal.')
+            rows = self.rows('SELECT allowed FROM creator_permissions WHERE user=? AND kind=?', (user, kind))
+        else:
+            rows = self.rows('SELECT allowed FROM creators WHERE id=?', (user,))
         return bool(rows and rows[0]['allowed'])
 
-    def grant(self, actor, user):
+    def grant(self, actor, user, kind='forcesubs'):
         self.master(actor)
-        if user <= 0:
-            raise ValueError('ID pengguna harus positif.')
+        if user <= 0 or kind not in ('forcesubs', 'payment', 'both'):
+            raise ValueError('ID atau jenis izin tidak valid.')
         with self.conn:
             self.conn.execute('INSERT INTO creators VALUES (?,1) ON CONFLICT(id) DO UPDATE SET allowed=1', (user,))
+            for name in ('forcesubs', 'payment'):
+                enabled = kind in (name, 'both')
+                self.conn.execute('INSERT INTO creator_permissions VALUES (?,?,?) ON CONFLICT(user,kind) DO UPDATE SET allowed=excluded.allowed', (user,name,enabled))
+                if not enabled:
+                    self._stop_kind(user, name)
 
-    def revoke(self, actor, user):
+    def _stop_kind(self, user, kind):
+        self.conn.execute('UPDATE bots SET active=0,redeploy_required=1 WHERE owner=? AND kind=?', (user,kind))
+        self.conn.execute("UPDATE payment_orders SET state='cancelled' WHERE bot IN (SELECT id FROM bots WHERE owner=? AND kind=?) AND state='pending' AND payment='pending'", (user,kind))
+
+    def revoke(self, actor, user, kind='both'):
         self.master(actor)
         if user == self.master_owner:
             raise ValueError('Tidak dapat mencabut izin pemilik bot induk.')
+        if kind not in ('forcesubs','payment','both'):
+            raise ValueError('Jenis izin tidak dikenal.')
         with self.conn:
-            self.conn.execute('INSERT INTO creators VALUES (?,0) ON CONFLICT(id) DO UPDATE SET allowed=0', (user,))
-            self.conn.execute('UPDATE bots SET active=0, redeploy_required=1 WHERE owner=?', (user,))
+            for name in ('forcesubs','payment'):
+                if kind in (name,'both'):
+                    self.conn.execute('INSERT INTO creator_permissions VALUES (?,?,0) ON CONFLICT(user,kind) DO UPDATE SET allowed=0', (user,name))
+                    self._stop_kind(user,name)
+            enabled = any(self.allowed(user,k) for k in ('forcesubs','payment'))
+            self.conn.execute('INSERT INTO creators VALUES (?,?) ON CONFLICT(id) DO UPDATE SET allowed=excluded.allowed', (user,enabled))
 
     def creators(self):
         return self.rows('SELECT * FROM creators ORDER BY id')
@@ -143,19 +171,21 @@ class Store:
         if self.bot(bot)['owner'] != actor:
             raise PermissionError('Hanya pemilik bot yang boleh mengubah pengaturan.')
 
-    def deploy(self, actor, bot, username, api_id, api_hash, token, session, name=None):
-        if not self.allowed(actor):
+    def deploy(self, actor, bot, username, api_id, api_hash, token, session, name=None, kind='forcesubs'):
+        if not self.allowed(actor, kind):
             raise PermissionError('Kamu belum mendapat izin membuat bot.')
-        existing = self.rows('SELECT owner FROM bots WHERE id=?', (bot,))
+        existing = self.rows('SELECT owner,kind FROM bots WHERE id=?', (bot,))
         if existing and existing[0]['owner'] != actor:
             raise PermissionError('Bot sudah terdaftar milik pengguna lain.')
+        if existing and existing[0]['kind'] != kind:
+            raise ValueError('Jenis bot yang terdaftar tidak boleh diganti.')
         encrypted = self.cipher.encrypt(json.dumps(dict(
             api_id=api_id, api_hash=api_hash, token=token, session=session)).encode())
         with self.conn:
-            self.conn.execute('''INSERT INTO bots(id,owner,username,credentials,active)
-                VALUES (?,?,?,?,1) ON CONFLICT(id) DO UPDATE SET
+            self.conn.execute('''INSERT INTO bots(id,owner,username,credentials,active,kind)
+                VALUES (?,?,?,?,1,?) ON CONFLICT(id) DO UPDATE SET
                 username=excluded.username, credentials=excluded.credentials, active=1, redeploy_required=0''',
-                (bot, actor, username, encrypted))
+                (bot, actor, username, encrypted, kind))
 
         if name:
             self.display_name(bot, name)
@@ -165,18 +195,24 @@ class Store:
 
     def set_active(self, actor, bot, active):
         self.master(actor)
-        if active and not self.allowed(self.bot(bot)['owner']):
+        if active and not self.allowed(self.bot(bot)['owner'], self.bot(bot)['kind']):
             raise PermissionError('Pemilik bot belum mendapat izin.')
         if active and self.bot(bot)['redeploy_required']:
             raise PermissionError('Bot ini perlu deploy ulang melalui /buatbot setelah pencabutan izin.')
         with self.conn:
             self.conn.execute('UPDATE bots SET active=? WHERE id=?', (bool(active), bot))
+            if not active:
+                self.conn.execute("UPDATE payment_orders SET state='cancelled' WHERE bot=? AND state='pending' AND payment='pending'", (bot,))
 
     def settings(self, bot):
         return DEFAULTS | json.loads(self.bot(bot)['settings'])
 
     def setting(self, bot, actor, name, value):
-        self.owner(bot, actor)
+        if self.bot(bot)['kind']=='payment' and name in ('payment_welcome','payment_photo'):
+            from .payment_store import PaymentStore
+            PaymentStore(self).staff(bot,actor)
+        else:
+            self.owner(bot, actor)
         if name not in DEFAULTS:
             raise ValueError('Pengaturan tidak dikenal.')
         if name == 'database' and (not isinstance(value, int) or value >= 0):
@@ -185,7 +221,7 @@ class Store:
             raise ValueError('Proteksi harus aktif/nonaktif.')
         if name == 'delete_seconds' and (type(value) is not int or not 0 <= value <= 172740):
             raise ValueError('Durasi 0 (nonaktif) sampai 2879 menit; Telegram membatasi penghapusan pesan hingga 48 jam.')
-        if name in ('welcome', 'force_message', 'delete_notice'):
+        if name in ('welcome', 'force_message', 'delete_notice', 'payment_welcome'):
             if not isinstance(value, str) or not value.strip() or len(value) > 1000:
                 raise ValueError('Teks harus berisi 1–1000 karakter.')
         if name == 'delete_notice':
@@ -193,7 +229,7 @@ class Store:
             for _, field, spec, conversion in string.Formatter().parse(value):
                 if field is not None and (field != 'durasi' or spec or conversion):
                     raise ValueError('Hanya penanda {durasi} yang diperbolehkan.')
-        if name == 'welcome_photo' and value is not None and not isinstance(value, dict):
+        if name in ('welcome_photo','payment_photo') and value is not None and not isinstance(value, dict if name=='welcome_photo' else str):
             raise ValueError('Kirim foto untuk pesan sambutan.')
         settings = self.settings(bot)
         settings[name] = value
